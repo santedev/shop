@@ -1,0 +1,19 @@
+[files]
+extend-exclude = [
+    ".git/",
+]
+ignore-hidden = false
+
+[default]
+extend-ignore-re = [
+    "\\[[0-9a-f]{7}\\]",
+    "commit/[0-9a-f]{7}",
+    "\\{a,ba,da,k,z\\}sh",
+    "\\[@[a-zA-Z0-9\\-]+\\]",
+]
+
+[default.extend-words]
+compressable = "compressable"
+
+[default.extend-identifiers]
+flate2 = "flate2"
