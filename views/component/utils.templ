@@ -1,0 +1,34 @@
+package component
+
+import (
+	"fmt"
+	"shop/services/store"
+)
+
+//product to anchor
+templ ptoa(product store.Product, combination store.Combination) {
+	<a
+		href={ templ.SafeURL(fmt.Sprintf("/%s/p/%s", product.Name, string(combination.Sku))) }
+	>
+		{ children... }
+	</a>
+}
+
+templ productsTempl(id string) {
+	<products
+		_="on click
+			tell the closest <button/> to the target
+				halt the event's default"
+		id={ id }
+		class="grid gap-2 grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 mx-2 md:mx-3 xl:mx-4 2xl:mx-6 bg-neutral-500"
+	>
+		{ children... }
+	</products>
+}
+
+func shortened(text string) string {
+	if len(text) <= 15 {
+		return text
+	}
+	return text[:12] + "..."
+}

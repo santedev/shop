@@ -1,0 +1,17 @@
+package home
+
+import (
+	"shop/services/store"
+	"shop/views/component"
+	"shop/views/layouts"
+)
+
+var imports = layouts.GetModules("products")
+
+templ Index(user store.User, products []store.Product, cartCountItems int) {
+	@layouts.Base("home", layouts.Full, layouts.Default, user, cartCountItems, imports...) {
+		@component.MainContainer() {
+			@component.Products(products, component.Main)
+		}
+	}
+}

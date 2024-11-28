@@ -1,0 +1,36 @@
+package login
+
+import (
+	"shop/config"
+	"shop/services/auth/authGoogle"
+	"shop/services/store"
+	"shop/views/layouts"
+)
+
+templ Index() {
+	@layouts.Base("login", layouts.None, layouts.Default, store.User{}, 0, authGoogle.JsSource()...) {
+		@googleButton()
+	}
+}
+
+templ googleButton() {
+	<div
+		id="g_id_onload"
+		data-client_id={ config.Envs.GoogleKey }
+		data-context="signup"
+		data-ux_mode="popup"
+		data-callback="googleOAuth"
+		data-auto_select="true"
+		data-nonce=""
+		data-itp_support="true"
+	></div>
+	<div
+		class="g_id_signin"
+		data-type="standard"
+		data-shape="rectangular"
+		data-theme="outline"
+		data-text="signin_with"
+		data-size="large"
+		data-logo_alignment="left"
+	></div>
+}

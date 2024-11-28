@@ -1,0 +1,9 @@
+bin/
+node_modules/
+.env
+tmp/
+package.json
+package-lock.json
+tailwindcss
+*_templ.go
+sws/

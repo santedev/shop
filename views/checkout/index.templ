@@ -1,0 +1,94 @@
+package checkout
+
+import (
+	"fmt"
+	"shop/services/store"
+	"shop/views/component"
+	"shop/views/layouts"
+)
+
+var imports = append(layouts.GetModules("checkout"), layouts.PaypalSdkScript())
+
+templ Index(user store.User, countCartItems int, cartTotal float64, fromCart bool, items ...store.Items) {
+	@layouts.Base("checkout", layouts.Full, layouts.Default, user, countCartItems, imports...) {
+		@component.MainContainer() {
+			<checkout id="checkout-container">
+				@ProductsCheckout(items, fromCart, cartTotal, false)
+			</checkout>
+		}
+	}
+}
+
+templ UpdateItems(cartItems []store.Items, fromCart bool, countCartItems int, cartTotal float64) {
+	@ProductsCheckout(cartItems, fromCart, cartTotal, true)
+	@component.CartCount(countCartItems, true)
+}
+
+templ ProductsCheckout(items []store.Items, fromCart bool, cartTotal float64, oob bool) {
+	if oob {
+		<div hx-swap-oob="innerHTML:#checkout-container">
+			@productsTempl(items, fromCart, cartTotal)
+		</div>
+	} else {
+		@productsTempl(items, fromCart, cartTotal)
+	}
+}
+
+templ productsTempl(items []store.Items, fromCart bool, cartTotal float64) {
+	switch  {
+		case len(items) > 0:
+			<div class="flex gap-2 mx-6">
+				<section class="w-[65%]">
+					<products
+						id="cart-items"
+						class="flex flex-col gap-2"
+						if fromCart {
+							from-cart
+						}
+					>
+						@products(items...)
+					</products>
+				</section>
+				<section class="w-[35%]">
+					<div>{ fmt.Sprintf("total: %.*f", 2, cartTotal) }</div>
+					<div id="paypal-button-container"></div>
+				</section>
+			</div>
+		default:
+			@ErrorCart(fmt.Errorf("no items in your cart"))
+	}
+}
+
+templ ErrorCart(err error) {
+	<h1>{ err.Error() }</h1>
+}
+
+templ products(items ...store.Items) {
+	for _, item := range(items) {
+		<product sku={ string(item.Comb.Sku) } quantity={ fmt.Sprintf("%d", item.Quantity) }>
+			<div class="bg-neutral-300 flex flex-col gap-1">
+				<span>
+					{ item.Name }
+				</span>
+				<span class="max-w-sm">
+					if len(item.Images) > 0 {
+						<img
+							src={ component.ImageUrl(item.Images[0]) }
+							class={ component.ImageClass() }
+							loading="lazy"
+							alt="..."
+						/>
+					} else {
+						@component.ErrorImage(fmt.Errorf("couldnt find images"))
+					}
+				</span>
+				<span>
+					{ fmt.Sprintf("$%.2f", item.Comb.Price ) }
+				</span>
+				<span>
+					{ fmt.Sprintf("quantity: %d", item.Quantity) }
+				</span>
+			</div>
+		</product>
+	}
+}

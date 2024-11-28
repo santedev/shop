@@ -1,0 +1,114 @@
+package component
+
+import (
+	"fmt"
+	"shop/services/store"
+)
+
+type view int
+type action int
+type mode int
+type element int
+
+const (
+	Minus element = iota
+	Plus
+)
+
+const (
+	Min view = iota
+	Moderate
+	Full
+	Wrong
+)
+
+const (
+	Main mode = iota
+	Default
+)
+
+const (
+	Disabled action = iota
+	Redirect
+)
+
+templ productTempl(product store.Product) {
+	<product class="bg-neutral-300" title={ product.Name } product-id={ fmt.Sprintf("%d", product.Id) }>
+		@ptoa(product, product.Combinations[0]) {
+			<h1>{ shortened(product.Name) }</h1>
+			@productImage(product)
+			<h1>{ fmt.Sprintf("price: %.2f", product.Combinations[0].Price) }</h1>
+			<div class="flex gap-3 justify-center">
+				<span class="bg-neutral-200 rounded">
+					@BuyNow(product.Combinations[0].Sku)
+				</span>
+				@AddToCartButton(product.Combinations[0].Sku, Min)
+			</div>
+		}
+	</product>
+}
+
+templ BuyNow(sku store.Sku) {
+	if _, err := sku.ProductId(); err == nil {
+		<button class="buy-now p-3" hx-get={ fmt.Sprintf("/checkout/buynow/%s?quantity=%d", string(sku), 1) }>
+			buy now
+		</button>
+	} else {
+		@ErrorButton(fmt.Errorf("cant buy"), Disabled)
+	}
+}
+
+templ MainContainer() {
+	<main class="max-w-screen-2xl mx-auto">
+		{ children... }
+	</main>
+}
+
+templ Products(products []store.Product, mode mode) {
+	switch mode {
+		case Main:
+			@productsTempl("main-products") {
+				for _, product := range(products) {
+					if len(product.Combinations) <= 0 {
+						@ErrorProductCombination(fmt.Errorf("problem loading this product"))
+					} else {
+						@productTempl(product)
+					}
+				}
+			}
+		case Default:
+			@productsTempl("") {
+				for _, product := range(products) {
+					if len(product.Combinations) <= 0 {
+						@ErrorProductCombination(fmt.Errorf("problem loading this product"))
+					} else {
+						@productTempl(product)
+					}
+				}
+			}
+	}
+}
+
+templ productImage(product store.Product) {
+	if len(product.Images) <= 0 || len(product.Images[0]) <= 0 {
+		@ErrorImage(fmt.Errorf("problem loading image"))
+	} else {
+		<img class={ ImageClass() } src={ ImageUrl(product.Images[0]) } loading="lazy" alt="..."/>
+	}
+}
+
+func ImageUrl(image string) string {
+	return "/public/images/" + image
+}
+
+func ImageClass() string {
+	return "aspect-square object-cover w-full"
+}
+
+templ Gallery(images []string) {
+	<gallery>
+		for _, image := range(images) {
+			<img class={ ImageClass() } src={ ImageUrl(image) } loading="lazy" alt="..."/>
+		}
+	</gallery>
+}

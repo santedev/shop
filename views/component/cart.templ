@@ -1,0 +1,150 @@
+package component
+
+import (
+	"fmt"
+	"shop/services/store"
+)
+
+templ Cart(cartCountItems int) {
+	<cart id="cart">
+		<a href="/cart">
+			<div>
+				@IconCart()
+				@CartCount(cartCountItems, false)
+			</div>
+		</a>
+	</cart>
+}
+
+func UpdateCountCartUrl() string {
+	return "/cart/count/update-product"
+}
+
+templ CartCalc(sku store.Sku, element element) {
+	switch element {
+		case Minus:
+			<minus sku={ string(sku) }>-</minus>
+		case Plus:
+			<plus sku={ string(sku) }>+</plus>
+	}
+}
+
+templ AddToCartButton(sku store.Sku, view view) {
+	switch view {
+		case Full:
+			@buttonCart(sku) {
+				@IconCart()
+				<span>add to cart</span>
+			}
+		case Min:
+			@buttonCart(sku) {
+				@IconCart()
+			}
+		case Wrong:
+			<button disabled>add to cart</button>
+	}
+}
+
+templ buttonCart(sku store.Sku) {
+	<button class="add-to-cart" hx-get={ fmt.Sprintf("/cart/add-to-cart?sku=%s&quantity=1", sku) } hx-target="cart#cart" hx-swap="beforeend">
+		{ children... }
+	</button>
+}
+
+templ IconCart() {
+	<span>🛒</span>
+}
+
+templ CartRemoveProduct(sku store.Sku) {
+	<div
+		hx-delete={ fmt.Sprintf("cart/count/remove-product?sku=%s", string(sku)) }
+		hx-target={ fmt.Sprintf("product[sku='%s']", string(sku)) }
+		hx-swap="delete"
+	>x</div>
+}
+
+templ CartCount(cartCountItems int, oob bool) {
+	if cartCountItems > 0 {
+		<count
+			id="cart-count"
+			if oob {
+				hx-swap-oob="true"
+			}
+		>
+			{ fmt.Sprintf("%d", cartCountItems) }
+		</count>
+	} else {
+		<count
+			id="cart-count"
+			class="hidden"
+			if oob {
+				hx-swap-oob="true"
+			}
+		></count>
+	}
+}
+
+templ ProductCounter(quantity int, sku store.Sku, oob bool) {
+	<count
+		sku={ string(sku) }
+		if oob {
+			hx-swap-oob={ fmt.Sprintf(`outerHTML:count[sku="%s"]`, string(sku)) }
+		}
+	>
+		<form
+			hx-get={ UpdateCountCartUrl() }
+			hx-target="body"
+			hx-swap="beforeend"
+			hx-trigger={ fmt.Sprintf(`change delay:0.7s, keyup changed delay:0.7s from:input[sku="%s"]`, string(sku)) }
+		>
+			<input type="hidden" name="sku" value={ string(sku) }/>
+			<input
+				type="number"
+				sku={ string(sku) }
+				role="button"
+				name="quantity"
+				value={ fmt.Sprintf("%d", quantity) }
+				min="1"
+				max="99"
+				aria-label="select amount"
+			/>
+		</form>
+	</count>
+}
+
+templ CartBalance(cartBalance float64, oob bool) {
+	<div
+		id="cart-balance"
+		if oob {
+			hx-swap-oob="true"
+		}
+	>{ fmt.Sprintf("total: %.2f", cartBalance) }</div>
+}
+
+templ ProductBalance(productBalance float64, sku store.Sku, oob bool) {
+	<div
+		data-id="product-balance"
+		sku={ string(sku) }
+		if oob {
+			hx-swap-oob={ fmt.Sprintf(`outerHTML:div[sku="%s"][data-id="product-balance"]`, string(sku)) }
+		}
+	>{ fmt.Sprintf("total: %.2f", productBalance) }</div>
+}
+
+templ AddToCart(count int) {
+	@CartCount(count, true)
+}
+
+templ CartPageRemoveProduct(cartCountIt int, cartBalance float64) {
+	@ErrorCartNoProducts(cartCountIt == 0, true)
+	@CartCount(cartCountIt, true)
+	@CartBalance(cartBalance, true)
+}
+
+templ UpdateCartPage(sku store.Sku, cartCountIt, productCount int, cartBalance, productBalance float64) {
+	@ErrorCartNoProducts(cartCountIt == 0, true)
+	@ProductCounter(productCount, sku, true)
+	@CartCount(cartCountIt, true)
+	@CartBalance(cartBalance, true)
+	@ProductBalance(productBalance, sku, true)
+}

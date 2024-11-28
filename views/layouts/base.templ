@@ -1,0 +1,400 @@
+package layouts
+
+import (
+	"fmt"
+	"log"
+	"net/url"
+	"os"
+	"path/filepath"
+	"shop/config"
+	"shop/services/store"
+	"shop/views/component"
+)
+
+type priority int
+
+type Path string
+
+type key string
+type Param struct {
+	Key key
+	Val string
+}
+
+type navbar int
+type mode int
+
+const (
+	ClientId        key = "client-id"
+	IntegrationDate key = "integration-date"
+	Intent          key = "intent"
+	Locale          key = "locale"
+)
+const (
+	Top priority = iota
+	High
+	Low
+)
+
+const (
+	Full navbar = iota
+	None
+)
+const (
+	Default mode = iota
+	Min
+)
+
+type linkedSource struct {
+	head *Source
+	tail *Source
+}
+
+type Source struct {
+	Path     Path
+	Priority priority
+	Min      bool
+	Kind     any
+	Next     *Source
+}
+
+type Script struct {
+	Module    bool
+	Async     bool
+	Init      bool
+}
+
+type Link struct{}
+
+const (
+	PublicPath Path = "/public"
+	DistPath   Path = "/dist"
+	ScriptPath Path = "/scripts"
+	StylePath  Path = "/styles"
+	ModulePath Path = "/modules"
+)
+
+var (
+	entryPoints = map[string][]Source{
+		"home": {
+			{Path: Modules + "/home.min.js", Priority: Low, Kind: Script{}},
+		},
+		"checkout": {
+			{Path: Modules + "/checkout.min.js", Priority: Low, Kind: Script{}},
+		},
+	}
+)
+
+var (
+	Scripts Path = PublicPath + ScriptPath
+	Modules Path = dynamicPath(string(PublicPath), string(ModulePath))
+	Styles  Path = dynamicPath(string(PublicPath), string(StylePath))
+)
+
+var (
+	Alpinejs      = Source{Path: Scripts + "/alpine.js", Priority: High, Kind: Script{}}
+	AlpinejsFocus = Source{Path: Scripts + "/alpine.focus.js", Priority: High, Kind: Script{}}
+	Htmx          = Source{Path: Scripts + "/htmx.min.js", Priority: High, Kind: Script{}}
+	Hyperscript   = Source{Path: Scripts + "/hyperscript.min.js", Priority: High, Kind: Script{}}
+	Jquery        = Source{Path: Scripts + "/jquery.min.js", Priority: High, Kind: Script{}}
+	MainStyles    = dynamicStyles()
+)
+
+func getPaypalUrlSdk() string {
+	paypalSdk := "https://sandbox.paypal.com/sdk/js"
+	prodSdk := "https://www.paypal.com/sdk/js"
+	if config.Envs.Production {
+		return prodSdk
+	}
+	return paypalSdk
+}
+
+func PaypalSdkScript() Source {
+	paypalUrl := getPaypalUrlSdk()
+	if len(config.Envs.PaypalKey) <= 0 {
+		err := config.LoadEnv()
+		if err != nil {
+			panic(err)
+		}
+	}
+	params := []Param{
+		{Key: ClientId, Val: config.Envs.PaypalKey},
+		{Key: Intent, Val: "capture"},
+		{Key: Locale, Val: "es_CO"},
+	}
+	sdk := Source{
+		Path:     ParseToQuery(paypalUrl, params),
+		Priority: Top,
+		Kind:     Script{},
+	}
+	return sdk
+}
+
+func dynamicStyles() []Source {
+	if config.Envs.Production {
+		return []Source{{Path: Styles + "/bundle.min.css", Priority: Top, Kind: Link{}}}
+	}
+	return []Source{
+		{Path: Styles + "/main.css", Priority: Top, Kind: Link{}},
+		{Path: Styles + "/styles.css", Priority: Top, Kind: Link{}},
+	}
+}
+
+func ParseToQuery(domain string, q []Param) Path {
+	baseURL, err := url.Parse(domain)
+	if err != nil {
+		if !config.Envs.Production {
+			panic(fmt.Sprintf("Error parsing URL: %+v", err))
+		}
+		return Path(fmt.Sprintf("Error parsing URL: %+v", err))
+	}
+	query := url.Values{}
+	for _, p := range q {
+		query.Add(string(p.Key), p.Val)
+	}
+	baseURL.RawQuery = query.Encode()
+	return Path(baseURL.String())
+}
+
+func dynamicPath(first, second string) Path {
+	if config.Envs.Production {
+		return Path(first + string(DistPath) + second)
+	}
+	return Path(first + second)
+}
+
+func initDefaultHeader(prod bool) linkedSource {
+	pathStyle := PublicPath + StylePath
+	pathScript := PublicPath + ScriptPath
+	if prod {
+		pathStyle = Styles
+	}
+
+	var def []Source
+	if !prod {
+		def = []Source{
+			{Path: pathStyle + "/main.css", Priority: Top, Kind: Link{}},
+			{Path: pathStyle + "/styles.css", Priority: Top, Kind: Link{}},
+			{Path: pathScript + "/hyperscript.min.js", Priority: High, Kind: Script{}},
+			{Path: pathScript + "/htmx.min.js", Priority: High, Kind: Script{}},
+			{Path: pathScript + "/jquery.min.js", Priority: High, Kind: Script{}},
+			{Path: pathScript + "/alpine.focus.min.js", Priority: High, Kind: Script{}},
+			{Path: pathScript + "/alpine.min.js", Priority: High, Kind: Script{}},
+		}
+	} else {
+		def = []Source{
+			{Path: pathStyle + "/bundle.min.css", Priority: Top, Kind: Link{}},
+			{Path: pathScript + "/hyperscript.min.js", Priority: High, Kind: Script{}},
+			{Path: pathScript + "/htmx.min.js", Priority: High, Kind: Script{}},
+			{Path: pathScript + "/jquery.min.js", Priority: High, Kind: Script{}},
+			{Path: pathScript + "/alpine.focus.min.js", Priority: High, Kind: Script{}},
+			{Path: pathScript + "/alpine.min.js", Priority: High, Kind: Script{}},
+		}
+	}
+
+	return slcToMod(def...)
+}
+
+func mkHeader(mode mode, source ...Source) *Source {
+	err := config.LoadEnv()
+	if err != nil {
+		panic(err)
+	}
+	prod := config.Envs.Production
+	duplicates := make(map[Path]struct{}, len(source))
+	var linkedM linkedSource
+	switch mode {
+	case Default:
+		linkedM = initDefaultHeader(prod).merge(slcToMod(source...))
+	case Min:
+		linkedM = slcToMod(source...)
+	}
+	var topList, highList, lowList linkedSource
+	for current := linkedM.head; current != nil; current = current.Next {
+		s := *current
+		if !checkKind(s) {
+			if !prod {
+				panic(fmt.Sprintf("Critical error: Unsupported resource type: %+v", s))
+			}
+			log.Printf("Critical error in production: Unsupported resource type: %+v", s)
+			continue
+		}
+		if _, exists := duplicates[s.Path]; exists {
+			log.Printf("Info: Skipping duplicated path: %s", s.Path)
+			continue
+		}
+		duplicates[s.Path] = struct{}{}
+		if s.Min && prod {
+			s.Path = addMinSuffix(s.Path)
+		}
+		switch s.Priority {
+		case Top:
+			topList.append(&s)
+		case High:
+			highList.append(&s)
+		case Low:
+			lowList.append(&s)
+		}
+	}
+	return topList.merge(highList).merge(lowList).head
+}
+
+func slcToMod(modules ...Source) linkedSource {
+	dummy := &Source{}
+	head := dummy
+	var tail *Source
+	for _, mod := range modules {
+		mod := mod
+		head.Next = &mod
+		head = head.Next
+	}
+	tail = head
+	return linkedSource{head: dummy.Next, tail: tail}
+}
+
+func (self linkedSource) merge(list linkedSource) linkedSource {
+	if self.head == nil {
+		return list
+	}
+	if list.head == nil {
+		return self
+	}
+	self.tail.Next = list.head
+	self.tail = list.tail
+	self.tail.Next = nil
+	return self
+}
+
+func (self *linkedSource) append(src *Source) {
+	newSrc := *src
+	newSrc.Next = nil
+	if self.head == nil {
+		self.head = &newSrc
+		self.tail = &newSrc
+		return
+	}
+	self.tail.Next = &newSrc
+	self.tail = &newSrc
+}
+
+func (self linkedSource) traverse(cb func(*Source)) {
+	for c := self.head; c != nil; c = c.Next {
+		cb(c)
+	}
+}
+
+func checkKind(s Source) bool {
+	switch s.Kind.(type) {
+	case Link, Script:
+		return true
+	default:
+		return false
+	}
+}
+
+func GetModules(module string) []Source {
+	if config.Envs.Production {
+		return entryPoints[module]
+	}
+	modules := Modules
+	return LoadModules(Path(filepath.Join(string(modules), module)))
+}
+
+func LoadModules(modulePath Path) []Source {
+	path := modulePath
+	if path[0] == '/' {
+		path = path[1:]
+	}
+	var sources []Source
+	files, err := os.ReadDir(string(path))
+	if err != nil {
+		log.Printf("Error reading module directory: %s", err.Error())
+		return sources
+	}
+
+	for _, file := range files {
+		if filepath.Ext(file.Name()) == ".js" {
+			sources = append(sources, Source{
+				Path:     Path(filepath.Join(string(modulePath), file.Name())),
+				Priority: Low,
+				Kind:     Script{Module: true},
+			})
+		}
+	}
+	return sources
+}
+
+func addMinSuffix(path Path) Path {
+	index := 0
+	for i := len(path) - 1; i >= 0; i-- {
+		if path[i] == '.' {
+			index = i
+			break
+		}
+		if i == 0 {
+			index = -1
+		}
+	}
+	if index == -1 {
+		return path
+	}
+	return path[:index] + ".min" + path[index:]
+}
+
+templ Base(title string, nav navbar, mode mode, user store.User, cartCountItems int, source ...Source) {
+	<!DOCTYPE html>
+	<html lang="en">
+		@Head(title, mkHeader(mode, source...))
+		<body class="mx-auto">
+			switch nav {
+				case Full:
+					<nav class="flex w-full bg-slate-900 text-slate-300 text-xl px-9 p-4 max-w-screen-2xl mx-auto">
+						<div class="flex gap-4">
+							<a href="/">Home</a>
+							<a href="/checkout/buy">Checkout</a>
+						</div>
+						if user.Name != "" {
+							<a
+								href={ templ.SafeURL("/auth/logout") }
+								class="ml-auto text-red-400"
+							>Logout</a>
+							<img src={ user.AvatarUrl } class="w-8 h-8 rounded-full ml-2" loading="lazy" alt="user"/>
+							<span class="ml-2">
+								@component.Cart(cartCountItems)
+							</span>
+						} else {
+							<a href={ templ.SafeURL("/login") } class="ml-auto">login</a>
+						}
+					</nav>
+			}
+			{ children... }
+		</body>
+	</html>
+}
+
+templ Head(title string, source *Source) {
+	<head>
+		<meta charset="UTF-8"/>
+		<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+		<link rel="icon" type="image/x-icon" href="/public/images/favicon.ico"/>
+		for src := source; src != nil; src = src.Next {
+			switch kind := src.Kind.(type) {
+				case Link:
+					<link rel="stylesheet" href={ string(src.Path) }/>
+				case Script:
+					<script src={ string(src.Path) }
+					if kind.Module {
+						type="module"
+					}
+					if kind.Async {
+						async
+					}
+					if kind.Init {
+						init
+					}
+					defer></script>	
+			}
+		}
+		<title>{ title }</title>
+	</head>
+}

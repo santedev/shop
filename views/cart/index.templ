@@ -1,0 +1,98 @@
+package cart
+
+import (
+	"fmt"
+	"github.com/shopspring/decimal"
+	"shop/services/store"
+	"shop/views/component"
+	"shop/views/layouts"
+)
+
+var imports = layouts.GetModules("cart")
+
+templ Index(user store.User, cartCountItems int, cartBalance float64, cartItems []store.Items) {
+	@layouts.Base("cart", layouts.Full, layouts.Default, user, cartCountItems, imports...) {
+		@cont() {
+			if len(cartItems) > 0 {
+				@cartItemsTempl(cartBalance, cartItems...)
+			} else {
+				@component.ErrorCartNoProducts(cartCountItems == 0, false)
+			}
+		}
+	}
+}
+
+templ cartItemsTempl(cartBalance float64, cartItems ...store.Items) {
+	<div class="flex gap-4">
+		<products id="cart-products" class="flex w-[35%] flex-col gap-3">
+			for _, item := range(cartItems) {
+				<product class="bg-neutral-200" sku={ string(item.Comb.Sku) }>
+					@aItem(item)
+					@component.CartRemoveProduct(item.Comb.Sku)
+					<img class={ component.ImageClass() } src={ component.ImageUrl(item.Images[0]) } loading="lazy" alt="..."/>
+					<div class="flex flex-col gap-2">
+						@component.ProductBalance(
+							calculateTotal(
+								2,
+								item.Quantity,
+								item.Comb.Price,
+							),
+							item.Comb.Sku,
+							false,
+						)
+						@component.ProductCounter(
+							item.Quantity,
+							item.Comb.Sku,
+							false,
+						)
+						<div class="flex gap-2">
+							@component.CartCalc(item.Comb.Sku, component.Minus)
+							@component.CartCalc(item.Comb.Sku, component.Plus)
+						</div>
+					</div>
+				</product>
+			}
+		</products>
+		<section class="w-[65%]">
+			@component.CartBalance(cartBalance, false)
+		</section>
+	</div>
+}
+
+func calculateTotal(truncate int, quantity int, price float64) float64 {
+	qtyDecimal := decimal.NewFromFloat(float64(quantity))
+	priceDecimal := decimal.NewFromFloat(float64(price))
+
+	total := qtyDecimal.Mul(priceDecimal).Round(int32(truncate))
+	f, _ := total.Float64()
+	return f
+}
+
+templ cont() {
+	@component.MainContainer() {
+		<cart id="cart-container">
+			{ children... }
+		</cart>
+	}
+}
+
+templ aItem(item store.Items) {
+	<a
+		href={ templ.SafeURL(fmt.Sprintf("/%s/p/%s", item.Name, string(item.Comb.Sku))) }
+	>
+		{ shortened(item.Name) }
+	</a>
+}
+
+func shortened(text string) string {
+	if len(text) <= 15 {
+		return text
+	}
+	return text[:12] + "..."
+}
+
+templ CartPage(cartCountItems int, items ...store.Items) {
+	<products>
+		<section></section>
+	</products>
+}

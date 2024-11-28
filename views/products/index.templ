@@ -1,0 +1,210 @@
+package products
+
+import (
+	"fmt"
+	"shop/services/store"
+	"shop/views/component"
+	"shop/views/layouts"
+	"strings"
+)
+
+var scripts = layouts.LoadModules(layouts.Modules + "/product")
+
+templ SingleProduct(user store.User, product store.Product, cartCountItems int) {
+	@layouts.Base(title(product.Name), layouts.Full, layouts.Default, user, cartCountItems, scripts...) {
+		@component.MainContainer() {
+			<product id="main-product" class="flex justify-center gap-12">
+				<section>
+					@gallery(product.Images)
+				</section>
+				<section>
+					<div id="product-combinations">
+						@productCombs(product.Variants, product, product.Combinations)
+					</div>
+					if len(product.Variants) > 0 {
+						<div id="data-combinations" class="hidden">
+							for _, comb := range product.Combinations {
+								<combination
+									sku={ string(comb.Sku) }
+									options={ fmt.Sprintf(`{ "options":[ %s ] }`, opts(comb.Options)) }
+								></combination>
+							}
+						</div>
+					}
+				</section>
+			</product>
+		}
+	}
+}
+
+func opts(options []store.Option) string {
+	if len(options) <= 0 {
+		return ""
+	}
+	var opts strings.Builder
+	for _, option := range options {
+		opts.WriteString(fmt.Sprintf(`{"option":{"id":%d,"variantId":%d,"label":"%s"}},`,
+			option.Id,
+			option.VariantId,
+			option.Option,
+		))
+	}
+	opt := opts.String()
+	return opt[:len(opt)-1]
+}
+
+templ productCombs(variants []store.Variant, product store.Product, combinations []store.Combination) {
+	<combinations>
+		for i, combination := range combinations {
+			<combination
+				if i != 0 {
+					class="hidden"
+				}
+				sku={ string(combination.Sku) }
+			>
+				@description(product, combination)
+			</combination>
+		}
+	</combinations>
+	<div>
+		if len(product.Variants) > 0 {
+			@options(product.Variants)
+		}
+	</div>
+	<combinations>
+		for i, combination := range combinations {
+			<combination
+				if i != 0 {
+					class="hidden"
+				}
+				sku={ string(combination.Sku) }
+			>
+				<div>
+					@component.BuyNow(combination.Sku)
+					@component.AddToCartButton(combination.Sku, component.Full)
+				</div>
+			</combination>
+		}
+	</combinations>
+}
+
+templ gallery(images []string) {
+	<div class="flex gap-3">
+		<selector id="picture-selector" class="flex flex-col gap-2">
+			for i, path := range(images) {
+				if sku, err := attrbSKU(path); err == nil {
+					<picture-container
+						sku={ string(sku) }
+						class="border-2 border-transparent flex justify-center items-center text-center cursor-pointer w-20 h-20 bg-neutral-300 rounded"
+						_={ fmt.Sprintf(`
+					on click add .hidden to <picture-container.gallery/>
+						remove .hidden from <picture-container[data-image-id=%d]/>`, i) }
+					>
+						<img src={ path }/>
+					</picture-container>
+				} else {
+					<picture-container
+						class="border-2 border-transparent flex justify-center items-center text-center cursor-pointer w-20 h-20 bg-neutral-300 rounded"
+						_={ fmt.Sprintf(`
+					on click add .hidden to <picture-container.gallery/>
+						remove .hidden from <picture-container[data-image-id='%d']/>`, i) }
+					>
+						@component.ErrorImage(fmt.Errorf("invalid product image"))
+					</picture-container>
+				}
+			}
+		</selector>
+		<gallery id="gallery" class="w-[680px] h-[504px] flex justify-center items-center">
+			for i, path := range(images) {
+				if sku, err := attrbSKU(path); err == nil {
+					<picture-container
+						if i != 0 {
+							class="hidden"
+						}
+						sku={ string(sku) }
+						data-image-id={ fmt.Sprintf("%d", i) }
+					>
+						<img src={ path }/>
+					</picture-container>
+				} else {
+					<picture-container
+						if i != 0 {
+							class="hidden"
+						}
+						sku={ string(sku) }
+						data-image-id={ fmt.Sprintf("%d", i) }
+					>
+						@component.ErrorImage(fmt.Errorf("invalid product image"))
+					</picture-container>
+				}
+			}
+		</gallery>
+	</div>
+}
+
+templ description(product store.Product, combination store.Combination) {
+	<product-info>
+		<div>
+			<h1>{ product.Name }</h1>
+			<h2>{ product.Description }</h2>
+			<h2>{ product.ShortDescription }</h2>
+			<h2>{ fmt.Sprintf("price: %.2f", combination.Price) }</h2>
+		</div>
+	</product-info>
+}
+
+templ options(options []store.Variant) {
+	<product-variants id="product-variants" class="flex flex-col">
+		for _, variant := range(options) {
+			<options class="flex flex-col">
+				<span>{ variant.Label }</span>
+				<div class="flex gap-2">
+					for i, option := range(variant.Options) {
+						<option
+							class="p-3 border-2 border-transparent bg-neutral-300 rounded cursor-pointer"
+							option-id={ fmt.Sprintf("%d", option.Id) }
+							option-label={ option.Option }
+							data-selected={ fmt.Sprintf("%t", i == 0) }
+							variant-id={ fmt.Sprintf("%d", option.VariantId) }
+						>
+							{ option.Option }
+						</option>
+					}
+				</div>
+			</options>
+		}
+	</product-variants>
+}
+
+func title(title string) string {
+	return title
+}
+
+func attrbSKU(path string) (store.Sku, error) {
+	if len(path) <= 1 {
+		return "", fmt.Errorf("path's len cant be less than one")
+	}
+	var i int
+	for i = len(path) - 1; i >= 0; i-- {
+		if path[i] == '.' {
+			break
+		}
+		if i == 0 {
+			return "", fmt.Errorf("couldnt find extension")
+		}
+	}
+	path = path[:i]
+	separator := "/SKU/"
+	skuArr := strings.SplitN(path, separator, 1)
+	if len(skuArr) != 2 {
+		return "", fmt.Errorf("sku uses a bad format, should have only one '%s'", separator)
+	}
+	sku := skuArr[1]
+	if len(sku) <= 1 {
+		return "", fmt.Errorf("invalid len for sku")
+	}
+	if last := sku[len(sku)-1]; !(last >= '0' && last <= '9') {
+		return "", fmt.Errorf("invalid sku, doesnt end in digit ID")
+	}
+	return store.Sku(sku), nil
+}
